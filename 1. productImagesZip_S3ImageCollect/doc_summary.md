@@ -1,5 +1,5 @@
 
-Below is a detailed, structured explanation of your Lambda logic with a **simple real-world example** so that every condition and flow becomes clear.
+
 
 ---
 
