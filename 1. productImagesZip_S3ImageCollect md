@@ -1,0 +1,202 @@
+
+Below is a detailed, structured explanation of your Lambda logic with a **simple real-world example** so that every condition and flow becomes clear.
+
+---
+
+## ✅ **Objective Summary (In Simple Terms)**
+
+This Lambda:
+
+1. Reads product images from **S3 "collected" folder**:
+   `product-images/collected/{cainz_product_code}/{image_name}`
+
+2. Cross checks these images with database entries in `ec_product_image` table
+   Only images with `status = 0` (unread) are considered.
+
+3. Applies timing and size conditions to decide whether to **create ZIP or wait**.
+
+4. If allowed:
+
+   * Create ZIP of only **complete products**
+     (Never include partial images of any cainz product code)
+   * Save ZIP under:
+     `product-images/validated-zip/send/IFI_IMAGE_DATA_MARKETPLACE_YYYYMMDDhhmmss.zip`
+   * Update product images `status = 1` (read)
+
+---
+
+## ✅ **CONFIG Conditions (Important Logic)**
+
+| Condition                                         | Action                              |
+| ------------------------------------------------- | ----------------------------------- |
+| First unread image uploaded ≥ **10 mins** ago     | ✅ Create ZIP                        |
+| Total unread image size ≥ **100 MB**              | ✅ Create ZIP                        |
+| First unread image ≥ 10 mins **AND** size < 100MB | ✅ Create ZIP                        |
+| First unread image < 10 mins **AND** size < 100MB | ❌ Skip ZIP                          |
+| Total images > **1 GB**                           | ✅ Create ZIP but limit files to 1GB |
+
+---
+
+## ✅ **Maintenance Mode Behavior**
+
+| Mode                                                            | Action                                                 |
+| --------------------------------------------------------------- | ------------------------------------------------------ |
+| MAINTENANCE_MODE = true & ENABLE_LAMBDA_IN_MAINTENANCE_MODE = 0 | ❌ Do nothing (do not ZIP, do not delete unread images) |
+| Maintenance ends                                                | ✅ Resume ZIP creation and update status to 1           |
+
+---
+
+## ✅ **Real World Example to Understand Logic**
+
+Assume DB contains:
+
+| Image | Cainz Code | Status |
+| ----- | ---------- | ------ |
+| A.jpg | 111        | 0      |
+| B.jpg | 111        | 0      |
+| C.jpg | 222        | 0      |
+| D.jpg | 222        | 0      |
+| E.jpg | 333        | 0      |
+
+Assume S3 contains:
+
+```
+product-images/collected/111/A.jpg   (50 KB)
+product-images/collected/111/B.jpg   (50 KB)
+product-images/collected/222/C.jpg   (50 KB)
+product-images/collected/222/D.jpg   (50 KB)
+```
+
+Image `E.jpg` is **missing** from S3.
+
+### ✅ What happens?
+
+✔ unread images = DB entries where status = 0
+✔ S3 intersection = A,B,C,D only
+❌ Cainz code 333 is incomplete → **skip 333 entirely**
+
+Final ZIP includes only **111 & 222 folders** fully.
+
+ZIP structure:
+
+```
+111/product/A.jpg
+111/product/B.jpg
+222/product/C.jpg
+222/product/D.jpg
+```
+
+DB update after zipping:
+
+| Image   | New Status                                            |
+| ------- | ----------------------------------------------------- |
+| A,B,C,D | ✅ 1                                                   |
+| E       | ❌ 0 (still unread, will process when E arrives in S3) |
+
+---
+
+## ✅ Timing Logic Example
+
+Assume:
+
+* config.minExecutationTimeInterval = 5 min
+* First unread image = uploaded **4 mins ago**
+* Total unread size = 80MB (< 100MB)
+
+Decision:
+→ **Do not generate ZIP**
+→ **Wait until either**
+✓ Size ≥ 100MB
+or
+✓ Oldest image ≥ 10min old
+
+---
+
+## ✅ Size Threshold Example
+
+Assume:
+
+* Total unread images = 1.5 GB (> 1GB)
+
+Decision:
+→ Only ZIP the first **1GB worth of image files**
+→ Remaining still `status = 0`, processed next run
+
+---
+
+## ✅ Key rule: Never include partial product data
+
+If Cainz product `222` requires 10 images
+But only 9 exist in S3
+→ Do not include any of the 9
+→ Wait for the missing one
+→ Protects downstream systems from incomplete datasets
+
+---
+
+## ✅ What Lambda Cron Table Does
+
+`LambdaCron` stores last successful execution timestamp.
+Used to filter only **new images since last run**.
+
+---
+
+## ✅ Zip Naming Convention
+
+Example:
+`IFI_IMAGE_DATA_MARKETPLACE_20251025_142530.zip`
+
+Meaning:
+YYYY = 2025
+MM = 10
+DD = 25
+hhmmss = 14:25:30 (Tokyo time)
+
+Stored at:
+
+```
+product-images/validated-zip/send/
+```
+
+---
+
+## ✅ Summary Flow Diagram
+
+```
+DB (status=0) → Filter unread images → Match with S3 collected folder
+                     ↓
+          Apply timing + size + completeness rules
+                     ↓
+          If allowed → Create ZIP (max 1GB)
+                     ↓
+       Upload ZIP → Update DB status = 1 → Store product image count
+```
+
+If conditions NOT met:
+→ Do nothing
+→ Keep status = 0
+→ Try next scheduled run
+
+---
+
+## ✅ Benefits of this Logic
+
+| Feature               | Why it matters                   |
+| --------------------- | -------------------------------- |
+| Timing handling       | Avoid too frequent ZIP creation  |
+| Size threshold        | Avoid too small ZIP files        |
+| 1GB max cap           | Avoid exceeding system limits    |
+| Complete product rule | Ensures accuracy and consistency |
+| Maintenance mode safe | No corruption during downtime    |
+
+---
+
+If you want, I can also provide:
+
+✅ A visual sequence diagram
+✅ Code optimization suggestions
+✅ Unit test strategy
+✅ Logging improvements
+✅ Architecture documentation PDF
+
+Would you like that?
