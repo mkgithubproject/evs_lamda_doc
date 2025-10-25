@@ -191,12 +191,120 @@ If conditions NOT met:
 
 ---
 
-If you want, I can also provide:
+Certainly. Here is a very clear and simplified explanation of that rule with a real example.
 
-✅ A visual sequence diagram
-✅ Code optimization suggestions
-✅ Unit test strategy
-✅ Logging improvements
-✅ Architecture documentation PDF
+---
 
-Would you like that?
+### ✅ Key Rule: **Never include partial product data**
+
+Each product (identified by a **cainz product code**) must have **all required images** before being included in the ZIP.
+
+#### Why is this rule required?
+
+Downstream systems expect **complete data** for every product.
+If even **one image** is missing, that product is considered **incomplete**.
+
+---
+
+### ✅ Example Scenario
+
+| Product Code | Required Image Count | Images Found in S3 | Include in ZIP? | Reason                 |
+| ------------ | -------------------- | ------------------ | --------------- | ---------------------- |
+| **111**      | 8 images             | 8 found            | ✅ Yes           | Complete set           |
+| **222**      | 10 images            | 9 found            | ❌ No            | Missing 1 → incomplete |
+| **333**      | 6 images             | 6 found            | ✅ Yes           | Complete set           |
+| **444**      | 12 images            | 0 found            | ❌ No            | No unread images       |
+
+---
+
+### ✅ What the Lambda does in this case
+
+It filters like this:
+
+```js
+finalImageKeys = [];
+countResult.forEach((product) => {
+  if (product.count === expectedCount) {
+    finalImageKeys.push(...allImagesOfProduct);
+  }
+});
+```
+
+So only the complete products go into the ZIP.
+
+---
+
+### 🧠 Why important?
+
+Without this rule:
+
+• Product **222** would upload 9 images today
+• The missing 1 might upload tomorrow
+→ Downstream system receives **partial product data**, causes errors or invalid listings
+
+---
+
+### 📌 Visual Representation
+
+```
+product-images/collected/  
+  |--- 111/  ✅ complete → ZIP
+  |--- 222/  ❌ missing images → WAIT
+  |--- 333/  ✅ complete → ZIP
+```
+
+---
+
+### ✅ Summary in one sentence
+
+> Only products with all expected images are added to the ZIP. If any image of a product is missing, that entire product is skipped until it becomes complete.
+
+---
+
+Start
+  |
+  v
+Fetch unread product images from database (status = 0)
+  |
+  v
+Check corresponding images in S3 "collected" folder
+  |
+  v
+Group images by cainz product code
+  |
+  v
+For each product:
+  |
+  v
+Is image count complete for this product?
+  |                     |
+  | Yes                 | No
+  v                     v
+Add ALL images          Skip product entirely
+of this product         (do not add partial images)
+to ZIP queue            wait for missing images next run
+  |
+  v
+After checking all products
+  |
+  v
+Is total ZIP size ≤ 1 GB?
+  |                     |
+  | Yes                 | No
+  v                     v
+Proceed with ZIP        Stop adding more products
+creation                until size limit allows
+  |
+  v
+Create ZIP file with all complete products
+  |
+  v
+Upload ZIP to "validated-zip/send"
+  |
+  v
+Update product images status from 0 -> 1 in database
+  |
+  v
+End
+
+
