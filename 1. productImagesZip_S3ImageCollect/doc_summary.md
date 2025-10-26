@@ -260,7 +260,7 @@ product-images/collected/
 > Only products with all expected images are added to the ZIP. If any image of a product is missing, that entire product is skipped until it becomes complete.
 
 ---
-
+```
 Start
   |
   v
@@ -306,5 +306,6 @@ Update product images status from 0 -> 1 in database
   |
   v
 End
+```
 
 
